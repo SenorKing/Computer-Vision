@@ -1,0 +1,302 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+
+using namespace std;
+
+// Image class
+class Image {
+private:
+    int numRows;
+    int numCols;
+    int minVal;
+    int maxVal;
+    int thrVal;
+
+    int *histAry;
+    int **imgAry;
+    int **tmpAry;
+
+    int **allocate2D(int rows, int cols);
+    void free2D(int **ary, int rows);
+
+public:
+    Image();
+    ~Image();
+
+    void readHeader(ifstream &inFile);
+    void allocateArrays();
+    void loadImage(ifstream &inFile);
+    void computeHist(ofstream &logFile);
+    void printHist(ofstream &histCountFile, ofstream &logFile);
+    void dispHist(ofstream &histGraphFile, ofstream &logFile);
+    void binThreshold(int thrVal, ofstream &outFile, ofstream &logFile);
+    void nonBinThreshold(int thrVal, ofstream &outFile, ofstream &logFile);
+    void prettyPrint(int **Ary, int printMinVal, int printMaxVal, ofstream &choiceFile);
+
+    int getNumRows() const { return numRows; }
+    int getNumCols() const { return numCols; }
+    int getMinVal()  const { return minVal;  }
+    int getMaxVal()  const { return maxVal;  }
+    int **getImgAry() const { return imgAry; }
+    int **getTmpAry() const { return tmpAry; }
+};
+
+Image::Image()
+    : numRows(0), numCols(0), minVal(0), maxVal(0), thrVal(0),
+      histAry(nullptr), imgAry(nullptr), tmpAry(nullptr) {
+}
+
+Image::~Image() {
+    if (imgAry != nullptr) free2D(imgAry, numRows);
+    if (tmpAry != nullptr) free2D(tmpAry, numRows);
+    if (histAry != nullptr) delete[] histAry;
+}
+
+int **Image::allocate2D(int rows, int cols) {
+    int **ary = new int *[rows];
+    for (int i = 0; i < rows; i++) {
+        ary[i] = new int[cols];
+    }
+    return ary;
+}
+
+void Image::free2D(int **ary, int rows) {
+    for (int i = 0; i < rows; i++) {
+        delete[] ary[i];
+    }
+    delete[] ary;
+}
+
+// read numRows, numCols, minVal, maxVal
+void Image::readHeader(ifstream &inFile) {
+    inFile >> numRows >> numCols >> minVal >> maxVal;
+}
+
+// allocate imgAry, tmpAry, histAry
+void Image::allocateArrays() {
+    imgAry = allocate2D(numRows, numCols);
+    tmpAry = allocate2D(numRows, numCols);
+
+    histAry = new int[maxVal + 1];
+    for (int v = 0; v <= maxVal; v++) {
+        histAry[v] = 0;
+    }
+}
+
+// loadImage
+void Image::loadImage(ifstream &inFile) {
+    for (int i = 0; i < numRows; i++) {
+        for (int j = 0; j < numCols; j++) {
+            inFile >> imgAry[i][j];
+        }
+    }
+}
+
+// computeHist
+void Image::computeHist(ofstream &logFile) {
+    logFile << "*** Entering computeHist ()" << endl;
+
+    int i = 0;
+    while (i < numRows) {
+        int j = 0;
+        while (j < numCols) {
+            int val = imgAry[i][j];
+            if (val < minVal || val > maxVal) {
+                logFile << "imgAry [" << i << ", " << j
+                         << "] value is not within minVal and maxVal" << endl;
+                exit(1);
+            }
+            histAry[val] = histAry[val] + 1;
+            j++;
+        }
+        i++;
+    }
+
+    logFile << "*** leaving computeHist ()" << endl;
+}
+
+// printHist
+void Image::printHist(ofstream &histCountFile, ofstream &logFile) {
+    logFile << "*** Entering printHist ()" << endl;
+
+    histCountFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+    for (int v = 0; v <= maxVal; v++) {
+        histCountFile << v << " " << histAry[v] << endl;
+    }
+
+    logFile << "*** leaving printHist ()" << endl;
+}
+
+// dispHist
+void Image::dispHist(ofstream &histGraphFile, ofstream &logFile) {
+    logFile << "*** Entering dispHist ()" << endl;
+
+    histGraphFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+    for (int v = 0; v <= maxVal; v++) {
+        histGraphFile << v << " (" << histAry[v] << "):";
+        for (int k = 0; k < histAry[v]; k++) {
+            histGraphFile << "+";
+        }
+        histGraphFile << endl;
+    }
+
+    logFile << "*** leaving dispHist ()" << endl;
+}
+
+// binThreshold
+void Image::binThreshold(int thrValIn, ofstream &outFile, ofstream &logFile) {
+    thrVal = thrValIn;
+
+    logFile << "*** Entering binaryThreshold ()" << endl;
+    outFile << "*** The result of the binary image using " << thrVal
+            << " as threshold value ***" << endl;
+
+    int i = 0;
+    while (i < numRows) {
+        int j = 0;
+        while (j < numCols) {
+            if (imgAry[i][j] >= thrVal) {
+                logFile << "1 ";
+                tmpAry[i][j] = 1;
+            } else {
+                logFile << "0 ";
+                tmpAry[i][j] = 0;
+            }
+            j++;
+        }
+        outFile << endl;
+        logFile << endl;
+        i++;
+    }
+
+    logFile << "*** leaving binaryThreshold ()" << endl;
+}
+
+// nonBinThreshold
+void Image::nonBinThreshold(int thrValIn, ofstream &outFile, ofstream &logFile) {
+    thrVal = thrValIn;
+
+    logFile << "*** Entering nonBinThreshold ()" << endl;
+    outFile << "*** The result of the non-binary image using " << thrVal
+            << " as threshold value ***" << endl;
+
+    int i = 0;
+    while (i < numRows) {
+        int j = 0;
+        while (j < numCols) {
+            if (imgAry[i][j] >= thrVal) {
+                tmpAry[i][j] = imgAry[i][j];
+            } else {
+                tmpAry[i][j] = 0;
+            }
+            j++;
+        }
+        i++;
+    }
+
+    logFile << "*** leaving nonBinThreshold ()" << endl;
+}
+
+// PrettyPrint
+void Image::prettyPrint(int **Ary, int printMinVal, int printMaxVal, ofstream &choiceFile) {
+    choiceFile << numRows << " " << numCols << " " << printMinVal << " " << printMaxVal << endl;
+
+    ostringstream widthStream;
+    widthStream << printMaxVal;
+    int width = (int) widthStream.str().length();
+
+    int i = 0;
+    while (i < numRows) {
+        int j = 0;
+        while (j < numCols) {
+            choiceFile << Ary[i][j];
+
+            ostringstream valStream;
+            valStream << Ary[i][j];
+            int ww = (int) valStream.str().length();
+
+            do {
+                choiceFile << " ";
+                ww++;
+            } while (ww <= width);
+
+            j++;
+        }
+        choiceFile << endl;
+        i++;
+    }
+}
+
+// main
+int main(int argc, char *argv[]) {
+
+    if (argc != 7) {
+        cerr << "Usage: " << argv[0]
+             << " <inFile> <thrVal> <histCountFile> <histGraphFile> <outFile> <logFile>"
+             << endl;
+        return 1;
+    }
+
+    ifstream inFile(argv[1]);
+    if (!inFile.is_open()) {
+        cerr << "Error: cannot open input file " << argv[1] << endl;
+        return 1;
+    }
+
+    int thrVal = atoi(argv[2]);
+
+    ofstream histCountFile(argv[3]);
+    if (!histCountFile.is_open()) {
+        cerr << "Error: cannot open histCountFile " << argv[3] << endl;
+        return 1;
+    }
+
+    ofstream histGraphFile(argv[4]);
+    if (!histGraphFile.is_open()) {
+        cerr << "Error: cannot open histGraphFile " << argv[4] << endl;
+        return 1;
+    }
+
+    ofstream outFile(argv[5]);
+    if (!outFile.is_open()) {
+        cerr << "Error: cannot open outFile " << argv[5] << endl;
+        return 1;
+    }
+
+    ofstream logFile(argv[6]);
+    if (!logFile.is_open()) {
+        cerr << "Error: cannot open logFile " << argv[6] << endl;
+        return 1;
+    }
+
+    Image image;
+
+    image.readHeader(inFile);// read numRows, numCols, minVal, maxVal
+    image.allocateArrays(); // allocate imgAry, tmpAry, histAry
+
+    image.loadImage(inFile);
+    outFile << "*** Below is the input image ***" << endl;
+    image.prettyPrint(image.getImgAry(), image.getMinVal(), image.getMaxVal(), outFile);
+
+    image.computeHist(logFile);
+    image.printHist(histCountFile, logFile);
+    image.dispHist(histGraphFile, logFile);
+
+    logFile << "The threshold value = " << thrVal << endl;
+
+    image.binThreshold(thrVal, outFile, logFile);
+    image.prettyPrint(image.getTmpAry(), 0, 1, outFile);
+
+    image.nonBinThreshold(thrVal, outFile, logFile);
+    image.prettyPrint(image.getTmpAry(), 0, image.getMaxVal(), outFile);
+
+    inFile.close();
+    histCountFile.close();
+    histGraphFile.close();
+    outFile.close();
+    logFile.close();
+
+    return 0;
+}
