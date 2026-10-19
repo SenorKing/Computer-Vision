@@ -1,0 +1,476 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+#include <cmath>
+
+using namespace std;
+
+// BiMeans class
+class BiMeans {
+    public:
+        int numRows, numCols, minVal, maxVal; //image header
+        int BiGaussThrVal; //the auto selected threshold value by the Bi-Gaussian method.
+        int histHeight; //the largest hist[i] in the input histogram
+        
+        int *histAry; // a 1D integer array (size of maxVal + 1) to store the histogram. It needs to be dynamically allocated at run time; initialize to zero.
+        int *GaussAry; // a 1D integer array (size of maxVal + 1) to store the intermediate “modified” bi-Gaussian curve. 
+        int *bestFitGaussAry; // a 1D integer array (size of maxVal + 1) to store the best fit bi-Gaussian curve.
+        
+        char **GaussGraph; // a 2-D char array size of maxVal+1 by histHeight+1, initialize to blanks
+        char **gapGraph; //a 2-D char array size of maxVal+1 by histHeight+1, initialize to blanks
+        char **progressGraph; //a 2-D char array size of maxVal+1 by histHeight+1, initialize to blanks.
+
+        // allocate2D 
+        char **allocate2D(int rows, int cols) {
+            char **ary = new char *[rows];
+            for (int i = 0; i < rows; i++) {
+                ary[i] = new char[cols];
+            }
+            return ary;
+        }
+    
+        // free2D
+        void free2D(char **ary, int rows) {
+            for (int i = 0; i < rows; i++) {
+                delete[] ary[i];
+            }
+            delete[] ary;
+        }
+    
+
+    
+        // constructor
+        BiMeans(): numRows(0), numCols(0), minVal(0), maxVal(0),
+            BiGaussThrVal(0), histHeight(0),
+            histAry(nullptr), GaussAry(nullptr), bestFitGaussAry(nullptr),
+            GaussGraph(nullptr), gapGraph(nullptr), progressGraph(nullptr) {
+        }
+ 
+        // destructor
+        ~BiMeans() {
+            if (histAry != nullptr) delete[] histAry;
+            if (GaussAry != nullptr) delete[] GaussAry;
+            if (bestFitGaussAry != nullptr) delete[] bestFitGaussAry;
+            if (GaussGraph != nullptr) free2D(GaussGraph, maxVal + 1);
+            if (gapGraph != nullptr) free2D(gapGraph, maxVal + 1);
+            if (progressGraph != nullptr) free2D(progressGraph, maxVal + 1);
+        }
+
+        // readHeader - read the image header from the input file and store the values in numRows, numCols, minVal, and maxVal
+        void readHeader(ifstream &inFile) {
+            inFile >> numRows >> numCols >> minVal >> maxVal;
+        }
+    
+        // allocateHistAry - allocate the histAry array and initialize all elements to zero
+        void allocateHistAry() {
+            histAry = new int[maxVal + 1];
+            setZero1D(histAry);
+        }
+    
+        // loadHist - load the histogram from a file into the histAry array and return the largest hist[i] value
+        int loadHist(ifstream &inFile) {
+            int maxH = 0;
+            for (int k = 0; k <= maxVal; k++) {
+                int idx, val;
+                inFile >> idx >> val;
+                histAry[idx] = val;
+                if (val > maxH) {
+                    maxH = val;
+                }
+            }
+            histHeight = maxH;
+            return maxH;
+        }
+    
+        // allocateArrays - allocate the 1D and 2D arrays needed for the Bi-Gaussian method
+        void allocateArrays() {
+            GaussAry = new int[maxVal + 1];
+            bestFitGaussAry = new int[maxVal + 1];
+            setZero1D(GaussAry);
+            setZero1D(bestFitGaussAry);
+    
+            GaussGraph = allocate2D(maxVal + 1, histHeight + 1);
+            gapGraph = allocate2D(maxVal + 1, histHeight + 1);
+            progressGraph = allocate2D(maxVal + 1, histHeight + 1);
+    
+            setBlanks(GaussGraph);
+            setBlanks(gapGraph);
+            setBlanks(progressGraph);
+        }
+    
+        // printHist - print the histogram to a file
+        void printHist(ofstream &histFile, ofstream &logFile) {
+            logFile << "*** Entering printHist()" << endl;
+    
+            histFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int v = 0; v <= maxVal; v++) {
+                histFile << v << " " << histAry[v] << endl;
+            }
+    
+            logFile << "*** leaving printHist()" << endl;
+        }
+    
+        // dispHist - display the histogram in a text-based graph format
+        void dispHist(ofstream &histFile, ofstream &logFile) {
+            logFile << "*** Entering dispHist()" << endl;
+    
+            histFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int v = 0; v <= maxVal; v++) {
+                histFile << v << " (" << histAry[v] << "):";
+                for (int k = 0; k < histAry[v]; k++) {
+                    histFile << "+";
+                }
+                histFile << endl;
+            }
+    
+            logFile << "*** leaving dispHist()" << endl;
+        }
+    
+        // copyArys - copy the contents of one 1D integer array to another 1D integer array
+        void copyArys(int *ary1, int *ary2) {
+            for (int i = 0; i <= maxVal; i++) {
+                ary2[i] = ary1[i];
+            }
+        }
+    
+        // setZero1D - set all elements of a 1D integer array to zero
+        void setZero1D(int *Ary) {
+            for (int i = 0; i <= maxVal; i++) {
+                Ary[i] = 0;
+            }
+        }
+    
+        // setBlanks - set all elements of a 2D character array to blank spaces
+        void setBlanks(char **graph) {
+            for (int i = 0; i <= maxVal; i++) {
+                for (int j = 0; j <= histHeight; j++) {
+                    graph[i][j] = ' ';
+                }
+            }
+        }
+
+        // BiGaussian method - compute the best fit bi-Gaussian curve and return the threshold value
+        int BiGaussian(int *histAry, int *GaussAry, int minVal, int maxVal, char **progressGraph, ofstream &logFile, ofstream &progressFile) {
+            logFile << "*** Entering BiGaussian () method" << endl;
+            double sum1, sum2, total;
+            double minSumDiff = 9999.0;
+            int offSet = (maxVal - minVal) / 10;
+            int dividePt = minVal + offSet;
+            int bestThr = dividePt;
+            int maxHeight = 0;
+
+            while (dividePt < (maxVal - offSet)) {
+                setZero1D(GaussAry);
+
+                maxHeight = computeMaxHeight(histAry, minVal, dividePt);
+                sum1 = fitGauss(minVal, dividePt, histAry, GaussAry, maxHeight, logFile);// first Gaussian curve
+                
+                maxHeight = computeMaxHeight(histAry, dividePt, maxVal);
+                sum2 = fitGauss(dividePt, maxVal, histAry, GaussAry, maxHeight, logFile);// second Gaussian curve   
+
+                total = sum1 + sum2;
+                if (total < minSumDiff) {
+                    minSumDiff = total;
+                    bestThr = dividePt;
+                    copyArys(GaussAry, bestFitGaussAry);
+                }
+
+                logFile << "*** In biGaussian (): dividePt = " << dividePt
+                    << ", sum1= " << sum1 << ", sum2= " << sum2
+                    << ", total= " << total << ", minSumDiff = " << minSumDiff
+                    << " and bestThr=" << bestThr << endl;
+
+                if ((dividePt % 4) == 0) {
+                    progressFile << "*** below is the progress graph: dividePt = " << dividePt << " ***" << endl;// print dividePt
+                    plotProgressGraph(histAry, GaussAry, progressGraph, logFile);
+                    dispProgressGraph(progressFile);
+                }
+ 
+                dividePt++;
+            }
+
+            // This function should compute the best fit bi-Gaussian curve and return the threshold value
+            logFile << "*** leaving biGaussian() method, minSumDiff = " << minSumDiff << " bestThr is " << bestThr << endl;
+
+            BiGaussThrVal = bestThr;
+            return bestThr;
+        }
+
+        // fitGauss -  computes the Gaussian curve fitting to the histogram
+        double fitGauss(int leftIndex, int rightIndex, int *histAry, int *GaussAry, int &maxHeight, ofstream &logFile) {
+            logFile << "*** Entering fitGauss() method" << endl;
+    
+            double mean = computeMean(leftIndex, rightIndex, maxHeight, histAry, logFile);
+            double var = computeVar(leftIndex, rightIndex, mean, histAry, logFile);
+    
+            double sum = 0.0;
+            int index = leftIndex;
+
+            while (index <= rightIndex) {
+                double Gval = modifiedGauss(index, mean, var, maxHeight);
+                sum += fabs(Gval - (double) histAry[index]);
+                GaussAry[index] = (int) Gval;
+                index++;
+            }
+    
+            logFile << "*** leaving fitGauss() method, sum is " << sum << endl;
+            return sum;
+        }
+
+
+        // computeMean - computes the mean of the histogram values between leftIndex and rightIndex
+        double computeMean(int leftIndex, int rightIndex, int maxHeight, int *histAry, ofstream &logFile) {
+            logFile << "*** Entering computeMean() method" << endl;
+            maxHeight = 0;
+            double sum = 0.0;
+            int numPixels = 0;
+    
+            int index = leftIndex;
+            while (index < rightIndex) {
+                sum += (double) histAry[index] * index;
+                numPixels += histAry[index];
+                if (histAry[index] > maxHeight) {
+                    maxHeight = histAry[index];
+                }
+                index++;
+            }
+    
+            double result = (numPixels > 0) ? (sum / (double) numPixels) : (double) leftIndex;
+            logFile << "*** Leaving computeMean() method maxHeight = " << maxHeight
+                    << " result = " << result << endl;
+            return result;
+        }
+
+        // computeVar - computes the variance of the histogram values between leftIndex and rightIndex
+        double computeVar(int leftIndex, int rightIndex, double mean, int *histAry, ofstream &logFile) {
+            logFile << "*** Entering computeVar () method" << endl;
+
+            double sum = 0.0;
+            int numPixels = 0;
+
+            int index = leftIndex;
+            while (index < rightIndex) {
+                sum += (double) histAry[index] * ((double) index - mean) * ((double) index - mean);
+                numPixels += histAry[index];
+                index++;
+            }
+
+            double result = (numPixels > 0) ? (sum / (double) numPixels) : 1.0;
+            if (result <= 0.0) {
+                result = 1.0;
+            }
+            logFile << "*** Leaving computeVar() method returning result " << result << endl;
+            return result;
+        }
+        
+
+        // computeMaxHeight - //Returns the max of histAry[i], i from x1 to x2.
+        int computeMaxHeight(int *histAry, int x1, int x2) {
+            int maxheight = histAry[x1]; // Initialize maxheight to the first value 
+            for (int i = x1 + 1; i <= x2; i++){ //loop through the range from x1+1
+                if (histAry[i] > maxheight) { //if in any case i is greater than maxheight
+                    maxheight = histAry[i]; //update maxheight to i
+                }
+            }
+            return maxheight;//return the maxheight
+        }
+
+        // modifiedGauss - computes the modified Gaussian value for a given index, mean, variance, and maxHeight
+        double modifiedGauss(int x, double mean, double var, int maxHeight) {
+            return (double) maxHeight * exp(-((x - mean) * (x - mean)) / (2.0 * var));
+        }
+
+        // printBestFitGauss - prints the best fit Gaussian curve to a file
+        void printBestFitGauss(ofstream &GaussFile, ofstream &logFile) {
+            logFile << "*** Entering printBestFitGauss () method" << endl;
+    
+            GaussFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int v = 0; v <= maxVal; v++) {
+                GaussFile << v << " " << bestFitGaussAry[v] << endl;
+            }
+    
+            logFile << "*** leaving printBestFitGauss () method" << endl;
+        }
+
+        //plotGaussGraph - plots the best fit Gaussian curve onto GaussGraph with ‘*’.
+        void plotGaussGraph(int *bestFitGaussAry, char **GaussGraph, ofstream &logFile) {
+            logFile << "*** Entering plotGaussGraph() method" << endl;
+            setBlanks(GaussGraph);
+
+            int index = 0;
+            while (index <= maxVal) {
+                if (bestFitGaussAry[index] > 0) {
+                    int i = 0;
+                    while (i < bestFitGaussAry[index]) {
+                        GaussGraph[index][i] = '*';
+                        i++;
+                    }
+                }
+                index++;
+            }
+            logFile << "*** leaving plotGaussGraph() method" << endl;
+        }
+
+        //dispGaussGraph - Output GaussGraph to GaussFile. (Don’t forget image header)
+        void dispGaussGraph(char **GaussGraph, ofstream &GaussFile) {
+            GaussFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int index = 0; index <= maxVal; index++) {
+                for (int i = 0; i <= histHeight; i++) {
+                    GaussFile << GaussGraph[index][i];
+                }
+                GaussFile << endl;
+            }
+        }
+
+        //plotGapGraph - plots the gap between the histogram and the best fit Gaussian curve in a text-based graph format
+        void plotGapGraph(int *histAry, int *bestFitGaussAry, ofstream &logFile) {
+            logFile << "*** Entering plotGapGraph() method" << endl;
+            setBlanks(gapGraph);
+
+            int index = 0;
+            int end1, end2;
+            while(index <= maxVal) {
+                if (bestFitGaussAry[index] < histAry[index]) {
+                    end1 = bestFitGaussAry[index];
+                    end2 = histAry[index];
+                }
+                else {
+                    end1 = histAry[index];
+                    end2 = bestFitGaussAry[index];
+                }
+
+                int i = end1;
+
+                while(i <= end2){
+                    gapGraph[index][i] = '@';
+                    i++;
+                }
+
+                index++;
+            }
+            logFile << "*** leaving plotGapGraph() method" << endl;
+        }
+
+        //dispGapGraph - displays the gap between the histogram and the best fit Gaussian curve in a text-based graph format
+        void dispGapGraph(ofstream &GaussFile) {
+            GaussFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int index = 0; index <= maxVal; index++) {
+                for (int i = 0; i <= histHeight; i++) {
+                    GaussFile << gapGraph[index][i];
+                }
+                GaussFile << endl;
+            }
+        }
+
+        //plotProgressGraph - plots the progress graph of the histogram and Gaussian curve
+        void plotProgressGraph(int *histAry, int *GaussAry, char **progressGraph, ofstream &logFile) {
+            logFile << "*** Entering plotProgressGraph () method" << endl;
+            setBlanks(progressGraph);
+
+            int index = 0;
+            while (index <= maxVal) {
+                if (histAry[index] > 0) {
+                    int i = 0;
+                    while (i < histAry[index]) {
+                        progressGraph[index][i] = '+';
+                        i++;
+                    }
+                }
+                progressGraph[index][GaussAry[index]] = '@';
+                index++;
+            }
+
+            logFile << "*** leaving plotProgressGraph() method" << endl;
+        }
+
+        //dispProgressGraph - displays the progress graph in a text-based format
+        void dispProgressGraph(ofstream &progressFile) {
+            progressFile << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+            for (int index = 0; index <= maxVal; index++) {
+                for (int i = 0; i <= histHeight; i++) {
+                    progressFile << progressGraph[index][i];
+                }
+                progressFile << endl;
+            }
+        }
+    };
+
+    // main function
+    int main(int argc, char *argv[]) {
+        if (argc != 6) {
+            cerr << "Usage: " << argv[0]
+                << " <inFile1> <histFile> <progressFile> <GaussFile> <logFile>" << endl;
+            return 1;
+        }
+
+        ifstream inFile1(argv[1]);
+        if (!inFile1.is_open()) {
+            cerr << "Error:  cannot open input file " << argv[1] << endl;
+            return 1;
+        }
+
+        ofstream histFile(argv[2]);
+        if (!histFile.is_open()) {
+            cerr << "Error:  cannot open histogram file " << argv[2] << endl;
+            return 1;
+        }
+
+        ofstream progressFile(argv[3]);
+        if (!progressFile.is_open()) {
+            cerr << "Error:  cannot open progress file " << argv[3] << endl;
+            return 1;
+        }
+
+        ofstream GaussFile(argv[4]);
+        if (!GaussFile.is_open()) {
+            cerr << "Error:  cannot open Gaussian file " << argv[4] << endl;
+            return 1;
+        }
+
+        ofstream logFile(argv[5]);
+        if (!logFile.is_open()) {
+            cerr << "Error:  cannot open log file " << argv[5] << endl;
+            return 1;
+        }
+    
+        // Create an instance (object) of the BiMeans class
+        BiMeans bm;
+        bm.readHeader(inFile1);
+        bm.allocateHistAry();
+        bm.loadHist(inFile1);
+        bm.allocateArrays();
+
+        //histogram and graph display
+        histFile << "*** below is the input histogram ***" << endl;
+        bm.printHist(histFile, logFile); // print the histogram to the logfile
+        histFile << "*** Below is the graphic display of the input histogram ***" << endl;
+        bm.dispHist(histFile, logFile); // Output the histogram in the histogram file
+
+        // Bi-Gaussian threshold value display in the log file
+        bm.BiGaussian(bm.histAry, bm.GaussAry, bm.minVal, bm.maxVal, bm.progressGraph, logFile, progressFile);
+        GaussFile << "*** The selected threshold value = " << bm.BiGaussThrVal << " ***" << endl;        
+        
+        // best fit Gaussian curve display in the GaussFile
+        GaussFile << "*** Below is the best Fitted Gaussians ***" << endl;
+        bm.printBestFitGauss(GaussFile, logFile); //Output best fit Gaussian curve to the Gaussian file
+
+        // plot the best fit Gaussian curve onto GaussGraph with ‘*’.
+        bm.plotGaussGraph(bm.bestFitGaussAry, bm.GaussGraph, logFile); 
+        GaussFile << "*** Below is the graphic display of BestFitGaussAry ***" << endl;
+        bm.dispGaussGraph(bm.GaussGraph, GaussFile); // Output GaussGraph to GaussFile
+
+        // plot the gap between the histogram and the best fit Gaussian curve
+        bm.plotGapGraph(bm.histAry, bm.bestFitGaussAry, logFile); 
+        GaussFile << "*** Below displays the gaps between the histogram and the best fitted Gaussians ***" << endl;
+        bm.dispGapGraph(GaussFile); // Output gapGraph to GaussFile
+
+        //Close all files
+        inFile1.close();
+        histFile.close();
+        progressFile.close();
+        GaussFile.close();
+        logFile.close();    
+
+        return 0;
+    };
