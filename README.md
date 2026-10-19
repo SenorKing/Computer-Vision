@@ -7,7 +7,7 @@ Image-processing algorithms built from scratch in C++ and Java for CS381 (Comput
 
 | # | Project | Language | Topic |
 |---|---------|----------|-------|
-| 1 | [Histogram and Thresholding](project1-histogram) | C++ | Histogram, binary thresholding |
+| 1 | [Histogram and Thresholding](project1-histogram.md) | C++ | Histogram, binary thresholding |
 | 2 | [Bi-Gaussian Threshold](project2-bimeans) | C++ | Automatic threshold selection |
 | 3 | [Image Enhancement](project3-enhancement) | C++, Java | Average, median, Gaussian filters |
 | 4 | [Morphology](project4-morphology) | C++ | Dilation, erosion, opening, closing |
