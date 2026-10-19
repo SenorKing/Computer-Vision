@@ -214,11 +214,5 @@ histGraph2.txt
 - Ensure the input file is correctly formatted and contains exactly `numRows * numCols` integers after the header.
 - The program uses dynamic memory; for very large images, ensure your system has sufficient memory.
 
-## Contributing
-If you want, I can:
-- Add a proper LICENSE file (MIT/Apache/etc.).
-- Add a sample `input.txt` and expected outputs to an `examples/` directory.
-- Create a Makefile or CMake configuration.
-
 ## Author
 Created from the `project1-histogram` source in this repository.
