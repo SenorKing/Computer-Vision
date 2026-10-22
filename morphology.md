@@ -142,8 +142,6 @@ example
 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 1 1 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0 
 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 
 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
-<img width="468" height="215" alt="image" src="https://github.com/user-attachments/assets/e93aac08-c113-40b9-b961-9e67fbd23fe8" />
-
 
 ```
 
