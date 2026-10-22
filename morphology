@@ -1,0 +1,481 @@
+// Andre King
+// Morphology
+//10/10/2026
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+#include <cmath>
+ 
+using namespace std;
+ 
+// Morphology class
+class morphology {
+    public:
+        int numImgRows, numImgCols, imgMin, imgMax;
+        int numStructRows, numStructCols, structMin, structMax;
+        int rowOrigin, colOrigin;
+        int rowFrameSize; // set to (numStructRows / 2), integer division, i.e., 3/2 is 1; 4/2 is 2; 5/2 is 2
+        int colFrameSize; // set to (numStructCols / 2)
+        int extraRows; // set to (rowFrameSize * 2)
+        int extraCols; // set to (colFrameSize * 2)
+        int rowSize; // set to (numImgRows + extraRows)
+        int colSize; // set to (numImgCols + extraCols)
+ 
+        int** zeroFramedAry;  // a dynamically allocate 2D array, size of rowSize by colSize
+        int** morphAry;  // a dynamically allocate 2D array, size of rowSize by colSize
+        int** tempAry;  // tempAry is to be used as the intermediate result within opening and closing operations
+        int** structAry;  // a dynamically allocate 2D array, size of numStructRows by numStructCols
+        
+        // allocate2D 
+        int** allocate2D(int rows, int cols) {
+            int **ary = new int *[rows];
+            for (int i = 0; i < rows; i++) {
+                ary[i] = new int[cols];
+            }
+            return ary;
+        }
+ 
+        // free2D
+        void free2D(int **ary, int rows) {
+            for (int i = 0; i < rows; i++) {
+                delete[] ary[i];
+            }
+            delete[] ary;
+        }
+ 
+        // constructor - store the headers and origin, compute the frame sizes, and allocate and initialize all arrays
+        morphology(int nImgRows, int nImgCols, int iMin, int iMax,
+                   int nStructRows, int nStructCols, int sMin, int sMax,
+                   int rOrigin, int cOrigin) {
+            numImgRows = nImgRows;
+            numImgCols = nImgCols;
+            imgMin = iMin;
+            imgMax = iMax;
+            numStructRows = nStructRows;
+            numStructCols = nStructCols;
+            structMin = sMin;
+            structMax = sMax;
+            rowOrigin = rOrigin;
+            colOrigin = cOrigin;
+ 
+            rowFrameSize = numStructRows / 2;
+            colFrameSize = numStructCols / 2;
+            extraRows = rowFrameSize * 2;
+            extraCols = colFrameSize * 2;
+            rowSize = numImgRows + extraRows;
+            colSize = numImgCols + extraCols;
+ 
+            zeroFramedAry = allocate2D(rowSize, colSize);
+            morphAry = allocate2D(rowSize, colSize);
+            tempAry = allocate2D(rowSize, colSize);
+            structAry = allocate2D(numStructRows, numStructCols);
+        }
+ 
+        // destructor
+        ~morphology() {
+            free2D(zeroFramedAry, rowSize);
+            free2D(morphAry, rowSize);
+            free2D(tempAry, rowSize);
+            free2D(structAry, numStructRows);
+        }
+ 
+ 
+        // zero2DAry - set the entire Ary (nRows by nCols) to zero
+        void zero2DAry(int **Ary, int nRows, int nCols) {
+            for (int i = 0; i < nRows; i++) {
+                for (int j = 0; j < nCols; j++) {
+                    Ary[i][j] = 0;
+                }
+            }
+        }
+ 
+ 
+        // loadimgFile to zeroFramedAry inside of frame, begins at (rowOrigin, colOrigin). 
+        void loadImg(ifstream &inFile) {
+            for(int i = rowFrameSize; i < rowFrameSize + numImgRows; i++) {
+                for(int j = colFrameSize; j < colFrameSize + numImgCols; j++) {
+                    inFile >> zeroFramedAry[i][j];
+                }
+            }
+        }
+ 
+        // load structFile to structAry.
+        void loadStruct(ifstream &inFile) {
+            for(int i = 0; i < numStructRows; i++){
+                for(int j = 0; j < numStructCols; j++){
+                    inFile >> structAry[i][j];
+                }
+            }
+        }
+ 
+ 
+        // PrettyPrint - print a binary 2D array to prettyPrintFile with a caption and an image header
+        void prettyPrint(int **Ary, int nRows, int nCols, int printMinVal, int printMaxVal, string caption, ofstream &prettyPrintFile) {
+            prettyPrintFile << caption << endl;
+            prettyPrintFile << nRows << " " << nCols << " " << printMinVal << " " << printMaxVal << endl;
+ 
+            ostringstream widthStream;
+            widthStream << printMaxVal;
+            int width = (int) widthStream.str().length();
+ 
+            int i = 0;
+            while (i < nRows) {
+                int j = 0;
+                while (j < nCols) {
+                    prettyPrintFile << Ary[i][j];
+ 
+                    ostringstream valStream;
+                    valStream << Ary[i][j];
+                    int ww = (int) valStream.str().length();
+ 
+                    do {
+                        prettyPrintFile << " ";
+                        ww++;
+                    } while (ww <= width);
+ 
+                    j++;
+                }
+                prettyPrintFile << endl;
+                i++;
+            }
+        }
+ 
+ 
+        // process dilation on each pixel inside of zeroFramedAry
+        void computeDilation(int **inAry, int **outAry, ofstream &logFile) {
+            logFile << "*** Entering ComputeDilation method ***" << endl;
+            int i = rowFrameSize;
+ 
+            while(i < rowFrameSize + numImgRows) {
+                int j = colFrameSize;
+ 
+                while(j < colFrameSize + numImgCols) {
+                    if (inAry[i][j] > 0){
+                        onePixelDilation(i, j, inAry, outAry, logFile);// only processing one pixel inAry[i,j]
+                    }
+                    j++;
+                }
+                i++;
+            }
+            logFile << "*** Leaving ComputeDilation method ***" << endl;       
+        }
+ 
+ 
+        //compute erosion - process erosion on each pixel inside of zeroFramedAry
+        void computeErosion (int **inAry, int **outAry, ofstream &logFile){ // process erosion on each pixel inside of zeroFramedAry
+            logFile << "*** Entering ComputeErosion method ***" << endl; 
+            int i = rowFrameSize;
+            
+            while(i < rowFrameSize + numImgRows){
+                int j = colFrameSize;
+ 
+                while(j < colFrameSize + numImgCols){
+                    if(inAry[i][j] > 0){
+                        onePixelErosion(i, j, inAry, outAry, logFile); // only processing one pixel inAry[i,j]
+                    }
+                    j++;
+                }
+                i++;
+            }
+            logFile << "*** Leaving ComputeErosion method ***" << endl;
+        }
+ 
+ 
+        //compute opening - process opening on each pixel inside of zeroFramedAry
+        void computeOpening(int **zeroFramedAry, int **morphAry, int **tempAry, ofstream &logFile) {
+            logFile << "*** Entering ComputeOpening method ***" << endl;
+            computeErosion(zeroFramedAry, tempAry, logFile);
+            computeDilation(tempAry, morphAry, logFile);
+            logFile << "*** Leaving ComputeOpening method ***" << endl;
+        }
+ 
+ 
+        //compute closing - process closing on each pixel inside of zeroFramedAry
+        void computeClosing(int **zeroFramedAry, int **morphAry, int **tempAry, ofstream &logFile) {
+            logFile << "*** Entering ComputeClosing method ***" << endl;
+            computeDilation(zeroFramedAry, tempAry, logFile);
+            computeErosion(tempAry, morphAry, logFile);
+            logFile << "*** Leaving ComputeClosing method ***" << endl;
+        }
+ 
+ 
+        // onePixelDilation (i, j, inAry, outAry) // Perform dilation on pixel (i, j) with structAry.
+        void onePixelDilation(int i, int j, int **inAry, int **outAry, ofstream &logFile) {
+            logFile << "*** Entering onePixelDilation method ***" << endl;
+            int iOffset = i - rowOrigin;
+            int jOffset = j - colOrigin;// translation of image’s coordinate (i, j) with respected to the origin of the structuring element
+ 
+            int rIndex = 0;
+ 
+            while(rIndex < numStructRows){
+                int cIndex = 0;
+ 
+                while(cIndex < numStructCols){
+                    if(structAry[rIndex][cIndex] > 0){
+                        int r = iOffset + rIndex;
+                        int c = jOffset + cIndex;
+                        if(r >= 0 && r < rowSize && c >= 0 && c < colSize){ // stay inside the array
+                            outAry[r][c] = 1;
+                        }
+                    }
+                    cIndex++;
+                }
+                rIndex++;
+            }
+            logFile << "*** Leaving onePixelDilation method ***" << endl;
+        }
+ 
+ 
+        // onePixelErosion (i, j, inAry, outAry) // Perform erosion on pixel (i, j) with structAry.
+        void onePixelErosion(int i, int j, int **inAry, int **outAry, ofstream &logFile) {
+            logFile << "*** Entering onePixelErosion method ***" << endl;
+            int iOffset = i - rowOrigin;
+            int jOffset = j - colOrigin;
+            bool matchFlag = true;
+ 
+            int rIndex = 0;
+ 
+            while(rIndex < numStructRows){
+                int cIndex = 0;
+ 
+                while(cIndex < numStructCols){
+                    if(structAry[rIndex][cIndex] > 0){
+                        int r = iOffset + rIndex;
+                        int c = jOffset + cIndex;
+                        if(r < 0 || r >= rowSize || c < 0 || c >= colSize || inAry[r][c] <= 0){ // outside the array counts as 0
+                            matchFlag = false;
+                        }
+                    }
+                    cIndex++;
+                }
+                rIndex++;
+            }
+            if(matchFlag == true){
+                outAry[i][j] = 1;
+            } else {
+                outAry[i][j] = 0;
+            }
+            logFile << "*** Leaving onePixelErosion method ***" << endl;
+        }
+ 
+ 
+        // AryToFile - output the image header (same as the input image header), then only the pixels inside of the frame of inAry
+        void AryToFile(int **inAry, ofstream &fileOut) {
+            fileOut << numImgRows << " " << numImgCols << " " << imgMin << " " << imgMax << endl;
+ 
+            for (int i = rowFrameSize; i < rowFrameSize + numImgRows; i++) {
+                for (int j = colFrameSize; j < colFrameSize + numImgCols; j++) {
+                    fileOut << inAry[i][j];
+                    if (j < colFrameSize + numImgCols - 1) {
+                        fileOut << " ";
+                    }
+                }
+                fileOut << endl;
+            }
+        }
+        
+        // process1 - dilation: compute it, write it to dilationOutFile.txt, and pretty print it
+        void process1(ofstream &prettyPrintFile, ofstream &logFile) {
+            logFile << "** Entering process1 method ***" << endl;
+ 
+            string fileName = "dilationOutFile.txt";
+            ofstream outFile(fileName.c_str());
+ 
+            zero2DAry(morphAry, rowSize, colSize);
+            computeDilation(zeroFramedAry, morphAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of dilation. ***", prettyPrintFile);
+ 
+            outFile.close();
+            logFile << "** Leaving process1 method ***" << endl;
+        }
+ 
+ 
+        // process2 - erosion: compute it, write it to erosionOutFile.txt, and pretty print it
+        void process2(ofstream &prettyPrintFile, ofstream &logFile) {
+            logFile << "** Entering process2 method ***" << endl;
+ 
+            string fileName = "erosionOutFile.txt";
+            ofstream outFile(fileName.c_str());
+ 
+            zero2DAry(morphAry, rowSize, colSize);
+            computeErosion(zeroFramedAry, morphAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of erosion. ***", prettyPrintFile);
+ 
+            outFile.close();
+            logFile << "** Leaving process2 method ***" << endl;
+        }
+ 
+ 
+        // process3 - opening: compute it, write it to openingOutFile.txt, and pretty print it
+        void process3(ofstream &prettyPrintFile, ofstream &logFile) {
+            logFile << "** Entering process3 method ***" << endl;
+ 
+            string fileName = "openingOutFile.txt";
+            ofstream outFile(fileName.c_str());
+ 
+            zero2DAry(morphAry, rowSize, colSize);
+            zero2DAry(tempAry, rowSize, colSize);
+            computeOpening(zeroFramedAry, morphAry, tempAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of opening. ***", prettyPrintFile);
+ 
+            outFile.close();
+            logFile << "** Leaving process3 method ***" << endl;
+        }
+ 
+ 
+        // process4 - closing: compute it, write it to closingOutFile.txt, and pretty print it
+        void process4(ofstream &prettyPrintFile, ofstream &logFile) {
+            logFile << "** Entering process4 method ***" << endl;
+ 
+            string fileName = "closingOutFile.txt";
+            ofstream outFile(fileName.c_str());
+ 
+            zero2DAry(morphAry, rowSize, colSize);
+            zero2DAry(tempAry, rowSize, colSize);
+            computeClosing(zeroFramedAry, morphAry, tempAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of closing. ***", prettyPrintFile);
+ 
+            outFile.close();
+            logFile << "** Leaving process4 method ***" << endl;
+        }
+ 
+ 
+        // process5 - run all 4 operations (dilation, erosion, opening, closing), each with its own output file
+        void process5(ofstream &prettyPrintFile, ofstream &logFile) {
+            logFile << "** Entering process5 method ***" << endl;
+ 
+            string fileName = "dilationOutFile.txt";
+            ofstream outFile(fileName.c_str());
+            zero2DAry(morphAry, rowSize, colSize);
+            computeDilation(zeroFramedAry, morphAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of dilation. ***", prettyPrintFile);
+            outFile.close();
+ 
+            fileName = "erosionOutFile.txt";
+            outFile.open(fileName.c_str());
+            zero2DAry(morphAry, rowSize, colSize);
+            computeErosion(zeroFramedAry, morphAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of erosion. ***", prettyPrintFile);
+            outFile.close();
+ 
+            fileName = "openingOutFile.txt";
+            outFile.open(fileName.c_str());
+            zero2DAry(morphAry, rowSize, colSize);
+            zero2DAry(tempAry, rowSize, colSize);
+            computeOpening(zeroFramedAry, morphAry, tempAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of opening. ***", prettyPrintFile);
+            outFile.close();
+ 
+            fileName = "closingOutFile.txt";
+            outFile.open(fileName.c_str());
+            zero2DAry(morphAry, rowSize, colSize);
+            zero2DAry(tempAry, rowSize, colSize);
+            computeClosing(zeroFramedAry, morphAry, tempAry, logFile);
+            AryToFile(morphAry, outFile);
+            prettyPrint(morphAry, rowSize, colSize, imgMin, imgMax, "** Below is the result of closing. ***", prettyPrintFile);
+            outFile.close();
+ 
+            logFile << "** Leaving process5 method ***" << endl;
+        }
+ 
+ 
+ 
+    };
+ 
+ 
+    // Main function
+    int main(int argc, char* argv[]) {
+        if(argc != 6) {
+            cerr << "Usage: " << argv[0] 
+            << " <inFile> <structFile> <choice> <prettyPrintFile> <logFile> " << endl;
+            return 1;   
+        }
+ 
+        ifstream inFile(argv[1]);
+        if (!inFile.is_open()) {
+            cerr << "Error:  cannot open input file " << argv[1] << endl;
+            return 1;
+        }
+ 
+        ifstream structFile(argv[2]);
+        if (!structFile.is_open()) {
+            cerr << "Error:  cannot open structuring element file " << argv[2] << endl;
+            return 1;
+        }
+ 
+        ofstream prettyPrintFile(argv[4]);
+        if (!prettyPrintFile.is_open()) {
+            cerr << "Error:  cannot open pretty print file " << argv[4] << endl;
+            return 1;
+        }
+ 
+        ofstream logFile(argv[5]);
+        if (!logFile.is_open()) {
+            cerr << "Error:  cannot open log file " << argv[5] << endl;
+            return 1;
+        }
+ 
+        int numImgRows, numImgCols, imgMin, imgMax;
+        int numStructRows, numStructCols, structMin, structMax;
+        int rowOrigin, colOrigin;
+        inFile >> numImgRows >> numImgCols >> imgMin >> imgMax;
+        structFile >> numStructRows >> numStructCols >> structMin >> structMax;
+        structFile >> rowOrigin >> colOrigin;
+ 
+        morphology morph(numImgRows, numImgCols, imgMin, imgMax,
+                         numStructRows, numStructCols, structMin, structMax,
+                         rowOrigin, colOrigin);
+ 
+        morph.zero2DAry(morph.zeroFramedAry, morph.rowSize, morph.colSize);
+ 
+        morph.loadImg(inFile);
+        morph.prettyPrint(morph.zeroFramedAry, morph.rowSize, morph.colSize, morph.imgMin, morph.imgMax,
+                                "** Below is the zero framed input image. ***", prettyPrintFile);
+ 
+ 
+        morph.zero2DAry(morph.structAry, morph.numStructRows, morph.numStructCols);
+        morph.loadStruct(structFile);
+        morph.prettyPrint(morph.structAry, morph.numStructRows, morph.numStructCols, morph.structMin, morph.structMax,
+                                "** Below is the structuring element. ***", prettyPrintFile);
+ 
+        // choices must be 1, 2, 3, 4, or 5)
+        int choice = atoi(argv[3]);
+        if (choice < 1 || choice > 5) {
+            cerr << "Error:  invalid choice " << argv[3] << " (choose from be 1, 2, 3, 4, or 5)" << endl;
+            return 1;
+        }
+ 
+        // run the process that matches choice (1 dilation, 2 erosion, 3 opening, 4 closing, 5 all four)
+        if (choice == 1) {
+            morph.process1(prettyPrintFile, logFile);
+        }
+        if (choice == 2) {
+            morph.process2(prettyPrintFile, logFile);
+        }
+        if (choice == 3) {
+            morph.process3(prettyPrintFile, logFile);
+        }
+        if (choice == 4) {
+            morph.process4(prettyPrintFile, logFile);
+        }
+        if (choice == 5) {
+            morph.process5(prettyPrintFile, logFile);
+        }
+ 
+        // close all files
+        inFile.close();
+        structFile.close();
+        prettyPrintFile.close();
+        logFile.close();
+ 
+        return 0;
+    }
