@@ -1,4 +1,4 @@
-# project4-morphology
+# Binary-Image morphology
 
 A C++ image-processing project that applies binary morphological operations to a grayscale or binary image using a user-defined structuring element. The program supports dilation, erosion, opening, closing, and a batch mode that runs all four operations.
 
