@@ -1,0 +1,474 @@
+//Andre King
+import java.util.Scanner;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+ 
+// Enhancement class
+class Enhancement {
+    public int numRows, numCols, minVal, maxVal;
+    public int maskRows, maskCols, maskMin, maskMax, newMin, newMax, thrVal;
+ 
+    public int[][] mirrorFmAry; // a 2D array of size numRows + 2 by numCols + 2, dynamically allocated
+    public int[][] avgAry; // a 2D array of size numRows + 2 by numCols + 2, dynamically allocated.
+    public int[][] medianAry; // a 2D array of size numRows + 2 by numCols + 2, dynamically allocated
+    public int[][] GaussAry; // a 2D array of size numRows + 2 by numCols + 2, dynamically allocated.
+    public int[][] thrAry; // a 2D array of size numRows + 2 by numCols + 2, dynamically allocated.
+    public int[][] mask2DAry; // a 2D Gaussian mask of size maskRows by maskCols to hold the Gaussian mask
+ 
+    public int[] mask1DAry = new int[9]; // to hold the 9 pixels of mask, for easy convolution computation
+    public int maskWeight;  // The total value of the mask, can be computed during loadMask
+    public int[] neighbor1DAry = new int[9]; //1-D array to hold a pixel[i,j]'s 3x3 neighbors, for easy computation.
+ 
+    // allocate2D - dynamically allocate a 2D array of size rows by cols
+    public int[][] allocate2D(int rows, int cols) {
+        int[][] ary = new int[rows][cols];
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                ary[i][j] = 0;
+            }
+        }
+        return ary;
+    }
+ 
+    // Note: Java has automatic garbage collection, so unlike the C++ version
+    // there is no free2D method and no destructor -- arrays are reclaimed
+    // automatically once the object is no longer referenced.
+ 
+    // constructor
+    public Enhancement() {
+        numRows = 0;
+        numCols = 0;
+        minVal = 0;
+        maxVal = 0;
+        maskRows = 0;
+        maskCols = 0;
+        maskMin = 0;
+        maskMax = 0;
+        newMin = 0;
+        newMax = 0;
+        thrVal = 0;
+        mirrorFmAry = null;
+        avgAry = null;
+        medianAry = null;
+        GaussAry = null;
+        thrAry = null;
+        mask2DAry = null;
+        maskWeight = 0;
+    }
+ 
+    // readHeaders - read the image header from inFile and the mask header from maskFile, and store the threshold value
+    public void readHeaders(Scanner inFile, Scanner maskFile, int thrValIn) {
+        numRows = inFile.nextInt();
+        numCols = inFile.nextInt();
+        minVal = inFile.nextInt();
+        maxVal = inFile.nextInt();
+        newMin = minVal;
+        newMax = maxVal;
+        maskRows = maskFile.nextInt();
+        maskCols = maskFile.nextInt();
+        maskMin = maskFile.nextInt();
+        maskMax = maskFile.nextInt();
+        thrVal = thrValIn;
+    }
+ 
+    // allocateArrays - dynamically allocate all 2D arrays needed for the enhancement process
+    public void allocateArrays() {
+        mirrorFmAry = allocate2D(numRows + 2, numCols + 2);
+        avgAry = allocate2D(numRows + 2, numCols + 2);
+        medianAry = allocate2D(numRows + 2, numCols + 2);
+        GaussAry = allocate2D(numRows + 2, numCols + 2);
+        thrAry = allocate2D(numRows + 2, numCols + 2);
+        mask2DAry = allocate2D(maskRows, maskCols);
+    }
+ 
+    // binThreshold - apply binary thresholding to the input 2D array and store the result in the output 2D array
+    public void binThreshold(int[][] inAry, int[][] outAry, int thrVal, PrintWriter logFile) {
+        logFile.println("*** Entering binThreshold() method");
+ 
+        for (int i = 0; i <= numRows + 1; i++) {
+            for (int j = 0; j <= numCols + 1; j++) {
+                if (inAry[i][j] >= thrVal) {
+                    outAry[i][j] = 1;
+                } else {
+                    outAry[i][j] = 0;
+                }
+            }
+        }
+        logFile.println("*** leaving binThreshold() method");
+    }
+ 
+    // prettyPrint - print the 2D array to the output file in a formatted manner
+    public void prettyPrint(int[][] Ary, int rows, int cols, int printMinVal, int printMaxVal, PrintWriter logFile) {
+        logFile.println(rows + " " + cols + " " + printMinVal + " " + printMaxVal);
+ 
+        int width = String.valueOf(printMaxVal).length();
+ 
+        for (int i = 0; i < rows; i++) {
+            StringBuilder line = new StringBuilder();
+            for (int j = 0; j < cols; j++) {
+                line.append(Ary[i][j]);
+ 
+                int ww = String.valueOf(Ary[i][j]).length();
+ 
+                do {
+                    line.append(" ");
+                    ww++;
+                } while (ww <= width);
+            }
+            logFile.println(line.toString());
+        }
+    }
+ 
+    // mirrorFraming - mirror the edges of the input image to create a border around it
+    public void mirrorFraming(PrintWriter logFile) {
+        logFile.println("*** Entering mirrorFraming() method");
+ 
+        for (int j = 1; j <= numCols; j++) {// copy row 1 to row 0 and copy row numRows+1 to row numRows
+            mirrorFmAry[0][j] = mirrorFmAry[1][j]; // row 0 = row 1
+            mirrorFmAry[numRows + 1][j] = mirrorFmAry[numRows][j]; // row numRows+1 = row numRows
+        }
+        for (int i = 0; i <= numRows + 1; i++) {// copy column 1 to column 0 and copy column numCols+1 to column numCols
+            mirrorFmAry[i][0] = mirrorFmAry[i][1];// column 0 = column 1
+            mirrorFmAry[i][numCols + 1] = mirrorFmAry[i][numCols]; // column numCols+1 = column numCols
+        }
+        logFile.println("*** leaving mirrorFraming() method");
+    }
+ 
+    // loadImage - load the input image from inFile into mirrorFmAry starting at [1][1]
+    public void loadImage(Scanner inFile, PrintWriter logFile) {
+        logFile.println("*** Entering loadImage() method");
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                mirrorFmAry[i][j] = inFile.nextInt();
+            }
+        }
+        logFile.println("*** leaving loadImage() method");
+    }
+ 
+    // loadMask - load the Gaussian mask from maskFile into mask2DAry and compute the total maskWeight
+    public int loadMask(Scanner maskFile, PrintWriter logFile) {
+        logFile.println("*** Entering loadMask() method");
+        int weight = 0;
+        for (int i = 0; i < maskRows; i++) {
+            for (int j = 0; j < maskCols; j++) {
+                mask2DAry[i][j] = maskFile.nextInt();// read the mask value from the maskFile into the 2D array
+                weight += mask2DAry[i][j]; // weight is the sum of all mask values
+            }
+        }
+        maskWeight = weight;
+        logFile.println("*** Leaving loadMask() method");
+        return maskWeight;
+    }
+ 
+    // loadMask2Dto1D - Load 3x3 pixels of mask into mask1DAry;
+    public void loadMask2Dto1D(PrintWriter logFile) {
+        logFile.println("*** Entering loadMask2Dto1D() method");
+ 
+        int idx = 0;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                mask1DAry[idx] = mask2DAry[i][j];
+                idx++;
+            }
+        }
+        logFile.println("*** leaving loadMask2Dto1D() method");
+    }
+ 
+    // loadNeighbor2Dto1D - Load 3x3 pixels of mirrorFmAry(i,j) into neighbor1DAry;
+    public void loadNeighbor2Dto1D(int i, int j, PrintWriter logFile) {
+        logFile.println("*** Entering loadNeighbor2Dto1D() method");
+        int idx = 0;
+        for (int di = -1; di <= 1; di++) {// loop through the 3x3 neighborhood, -1, 0, 1 for both rows and columns
+            for (int dj = -1; dj <= 1; dj++) {
+                neighbor1DAry[idx] = mirrorFmAry[i + di][j + dj];// load the neighbor pixel into the 1D array
+                idx++;
+            }
+        }
+        logFile.println("*** leaving loadNeighbor2Dto1D() method");
+    }
+ 
+    //sort (neighborAry) // Use build-in or write your own bubble-sort method.
+    public void sort(int[] neighborAry) {
+        for (int i = 0; i < 9 - 1; i++) {
+            for (int j = 0; j < 9 - 1 - i; j++) {
+                if (neighborAry[j] > neighborAry[j + 1]) {
+                    int tmp = neighborAry[j];
+                    neighborAry[j] = neighborAry[j + 1];
+                    neighborAry[j + 1] = tmp;
+                }
+            }
+        }
+    }
+ 
+    // print1DAry - Print from Ary[0] to Ary[8], to oFile, in one text-line.
+    public void print1DAry(int[] ary, PrintWriter logFile) {
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < 9; i++) {
+            line.append(ary[i]).append(" ");
+        }
+        logFile.println(line.toString());
+    }
+ 
+    // computeMedian - Compute 3x3 median filter on mirrorFmAry, begin at [1][1], keep track of newMin and newMax.
+    public void computeMedian(PrintWriter logFile) {
+        logFile.println("*** Entering computeMedian method");
+        newMin = 9999;
+        newMax = 0;
+ 
+        int i = 1;
+        while (i <= numRows) {
+            int j = 1;
+            while (j <= numCols) {
+                loadNeighbor2Dto1D(i, j, logFile);
+                logFile.println("*** Below is conversion of mirrorFmAry [" + i + "][" + j + "] to 1D array");
+                print1DAry(neighbor1DAry, logFile);
+ 
+                sort(neighbor1DAry);
+                logFile.println("*** Below is the sorted neighbor array");
+                print1DAry(neighbor1DAry, logFile);
+ 
+                medianAry[i][j] = neighbor1DAry[4];
+ 
+                if (newMin > medianAry[i][j]) {
+                    newMin = medianAry[i][j];
+                }
+                if (newMax < medianAry[i][j]) {
+                    newMax = medianAry[i][j];
+                }
+ 
+                j++;
+            }
+            i++;
+        }
+        logFile.println("*** Leaving computeMedian method");
+    }
+ 
+    // computeAvg - Compute the 3x3 averaging of the input image and store the result in avgAry
+    public void computeAvg(PrintWriter logFile) {
+        logFile.println("*** Entering computeAvg() method");
+        newMin = 9999;
+        newMax = 0;
+ 
+        int i = 1;
+        while (i <= numRows) {
+            int j = 1;
+            while (j <= numCols) {
+                loadNeighbor2Dto1D(i, j, logFile);
+                logFile.println("*** Below is conversion of mirrorFmAry [" + i + "][" + j + "] to 1D array");
+                print1DAry(neighbor1DAry, logFile);
+ 
+                int sum = 0;
+                for (int k = 0; k <= 8; k++) {
+                    sum += neighbor1DAry[k];
+                }
+                avgAry[i][j] = sum / 9;
+ 
+                if (newMin > avgAry[i][j]) {// update newMin if the current average is less than newMin
+                    newMin = avgAry[i][j];
+                }
+                if (newMax < avgAry[i][j]) {// update newMax if the current average is greater than newMax
+                    newMax = avgAry[i][j];
+                }
+ 
+                j++;
+            }
+            i++;
+        }
+        logFile.println("*** leaving computeAvg method");
+    }
+ 
+    // computeGauss - process the mirrorFramedAry begin at [1][1]; keep track of newMin and newMax
+    public void computeGauss(PrintWriter logFile) {
+        logFile.println("*** Entering computeGauss() method");
+        newMin = 9999;
+        newMax = 0;
+ 
+        int i = 1;
+ 
+        while (i <= numRows) {
+            int j = 1;
+            while (j <= numCols) {
+                loadNeighbor2Dto1D(i, j, logFile);
+                logFile.println("*** Below is conversion of mirrorFmAry [" + i + "][" + j + "] to 1D array");
+                print1DAry(neighbor1DAry, logFile);
+                logFile.println("*** Below is mask1DAry");
+                print1DAry(mask1DAry, logFile);
+ 
+                GaussAry[i][j] = convolution(logFile);
+ 
+                if (newMin > GaussAry[i][j]) {
+                    newMin = GaussAry[i][j];
+                }
+                if (newMax < GaussAry[i][j]) {
+                    newMax = GaussAry[i][j];
+                }
+ 
+                j++;
+            }
+            i++;
+        }
+        logFile.println("*** leaving computeGauss() method");
+    }
+ 
+    // convolution - perform convolution of the 3x3 neighbor array with the 3x3 mask array and return the result
+    public int convolution(PrintWriter logFile) {
+        logFile.println("*** Entering convolution() method");
+        int result = 0;
+        int i = 0;
+ 
+        while (i < 9) {
+            result += neighbor1DAry[i] * mask1DAry[i];
+            i++;
+        }
+        int convolutionResult = result / maskWeight;
+ 
+        logFile.println("*** Leaving convolution method, convolution maskWeight = " + convolutionResult);
+        return convolutionResult;
+    }
+}
+ 
+// main function
+public class KingA_Project3_main {
+    public static void main(String[] args) {
+        if (args.length != 7) {
+            System.err.println("Usage: java KingA_Project3_main <inFile> <maskFile> <thrVal> <AvgFile> <MedianFile> <GaussFile> <logFile>");
+            return;
+        }
+ 
+        Scanner inFile;
+        try {
+            inFile = new Scanner(new File(args[0]));
+        } catch (FileNotFoundException e) {
+            System.err.println("Error:  cannot open input file " + args[0]);
+            return;
+        }
+ 
+        Scanner maskFile;
+        try {
+            maskFile = new Scanner(new File(args[1]));
+        } catch (FileNotFoundException e) {
+            System.err.println("Error:  cannot open mask file " + args[1]);
+            return;
+        }
+ 
+        int thrVal = Integer.parseInt(args[2]);
+        if (thrVal < 0 || thrVal > 255) {
+            System.err.println("Error:  invalid threshold value " + args[2]);
+            return;
+        }
+ 
+        PrintWriter AvgFile;
+        try {
+            AvgFile = new PrintWriter(new FileWriter(args[3]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open average file " + args[3]);
+            return;
+        }
+ 
+        PrintWriter MedianFile;
+        try {
+            MedianFile = new PrintWriter(new FileWriter(args[4]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open median file " + args[4]);
+            return;
+        }
+ 
+        PrintWriter GaussFile;
+        try {
+            GaussFile = new PrintWriter(new FileWriter(args[5]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open Gaussian file " + args[5]);
+            return;
+        }
+ 
+        PrintWriter logFile;
+        try {
+            logFile = new PrintWriter(new FileWriter(args[6]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open log file " + args[6]);
+            return;
+        }
+ 
+        // Create an instance (object) enhance of the Enhancement class
+        Enhancement enhance = new Enhancement();
+ 
+        // Step 1: read numRows, numCols, minVal, maxVal from inFile;
+        // newMin <- minVal, newMax <- maxVal;
+        // read maskRows, maskCols, maskMin, maskMax from maskFile
+        enhance.readHeaders(inFile, maskFile, thrVal);
+ 
+        // Step 2: dynamically allocate all 1-D and 2-D arrays
+        enhance.allocateArrays();
+ 
+        // Step 3: maskWeight <- loadMask(maskFile, mask2DAry, logFile)
+        // loadMask reads the 2D mask out of maskFile, stores it in mask2DAry, and saves the total maskWeight
+        enhance.loadMask(maskFile, logFile);
+ 
+        // loadMask2Dto1D(mask2DAry, mask1DAry, logFile)
+        // loadMask2Dto1D flattens that same 3x3 grid (mask2DAry) into the plain 9-element array mask1DAry
+        enhance.loadMask2Dto1D(logFile);
+ 
+        // Step 4: loadImage(inFile, mirrorFmAry, logFile)
+        // reads the numRows by numCols input image into mirrorFmAry, starting at [1][1]
+        enhance.loadImage(inFile, logFile);
+ 
+        // Step 5: mirrorFraming(mirrorFmAry, logFile)
+        // mirrors the real edge rows/columns outward into that open border, so every real pixel,
+        // including ones on the true image edge, has a complete 3x3 neighborhood
+        enhance.mirrorFraming(logFile);
+ 
+        int rows = enhance.numRows + 2;
+        int cols = enhance.numCols + 2;
+ 
+        //AvgFile output
+        AvgFile.println("*** Below is the mirror framed input image. *** ");
+        enhance.prettyPrint(enhance.mirrorFmAry, rows, cols, enhance.minVal, enhance.maxVal, AvgFile);
+        enhance.computeAvg(logFile);
+ 
+        AvgFile.println("*** Below is the 3x3 averaging of the input image. *** ");
+        enhance.prettyPrint(enhance.avgAry, rows, cols, enhance.newMin, enhance.newMax, AvgFile);
+        enhance.binThreshold(enhance.avgAry, enhance.thrAry, thrVal, logFile);
+ 
+        AvgFile.println("*** Below is the result of the binary threshold of averaging image. *** ");
+        enhance.prettyPrint(enhance.thrAry, rows, cols, 0, 1, AvgFile);
+ 
+        //medianFile output
+        MedianFile.println("*** Below is the mirror framed input image. ***");
+        enhance.prettyPrint(enhance.mirrorFmAry, rows, cols, enhance.minVal, enhance.maxVal, MedianFile);
+        enhance.computeMedian(logFile);
+ 
+        MedianFile.println("*** Below is the 3x3 median filter of the input image. ***");
+        enhance.prettyPrint(enhance.medianAry, rows, cols, enhance.newMin, enhance.newMax, MedianFile);
+        enhance.binThreshold(enhance.medianAry, enhance.thrAry, thrVal, logFile);
+ 
+        MedianFile.println("*** Below is the result of the binary threshold of median filtered image. ***");
+        enhance.prettyPrint(enhance.thrAry, rows, cols, 0, 1, MedianFile);
+ 
+        //GaussFile output
+        GaussFile.println("*** Below is the mirror framed input image. ***");
+        enhance.prettyPrint(enhance.mirrorFmAry, rows, cols, enhance.minVal, enhance.maxVal, GaussFile);
+ 
+        GaussFile.println("*** Below is the mask for Gaussian filter. ***");
+        enhance.prettyPrint(enhance.mask2DAry, enhance.maskRows, enhance.maskCols, enhance.maskMin, enhance.maskMax, GaussFile);
+        enhance.computeGauss(logFile);
+ 
+        GaussFile.println("*** Below is the 3x3 Gaussian filter of the input image. ***");
+        enhance.prettyPrint(enhance.GaussAry, rows, cols, enhance.newMin, enhance.newMax, GaussFile);
+        enhance.binThreshold(enhance.GaussAry, enhance.thrAry, thrVal, logFile);
+ 
+        GaussFile.println("*** Below is the result of the binary threshold of Gaussian filtered image. ***");
+        enhance.prettyPrint(enhance.thrAry, rows, cols, 0, 1, GaussFile);
+ 
+        //Close all files
+        inFile.close();
+        maskFile.close();
+        AvgFile.close();
+        MedianFile.close();
+        GaussFile.close();
+        logFile.close();
+    }
+}
+ 
