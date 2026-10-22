@@ -118,6 +118,8 @@ Each output image file follows the original image format:
 ```text
 numRows numCols minVal maxVal
 ```
+followed by the processed pixel values in row-major order.
+
 ```text
 example
 44 33 0 1
@@ -145,7 +147,6 @@ example
 
 ```
 
-followed by the processed pixel values in row-major order.
 
 ## Notes
 - The implementation treats nonzero pixels as foreground (`1`-like values).
