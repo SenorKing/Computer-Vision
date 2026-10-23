@@ -1,4 +1,4 @@
-# Project 5: Distance Transform and Skeleton Compression
+# Distance Transform and Skeleton Compression
 
 This project is the Java implementation of a distance-transform skeleton pipeline used in a computer vision assignment. The main logic lives in the `distanceSkeleton` class, and the program entry point is the `KingA_Project5_main` class.
 
