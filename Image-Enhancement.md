@@ -1,4 +1,4 @@
-# project3-enhancement
+# Image Enhancement
 
 A Java image-processing project that applies three neighborhood filters to a grayscale image: 3x3 averaging, median filtering, and Gaussian convolution. The program mirrors edge pixels, computes filtered results, applies binary thresholding, and writes separate output files for each stage.
 
