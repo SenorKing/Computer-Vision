@@ -1,0 +1,444 @@
+import java.util.Scanner;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+
+// distanceSkeleton class
+class distanceSkeleton {
+    public int numRows, numCols, minVal, maxVal;
+    public int newMinVal, newMaxVal;
+
+    public int[][] ZFAry; // a 2D integer array, dynamically allocated of size numRows + 2 by numCols + 2
+    public int[][] skeletonAry; // a 2D integer array, dynamically allocated of size numRows + 2 by numCols + 2
+    public int distanceChoice; // 4 or 8
+
+    // constructor - store the header and the distance choice, then allocate ZFAry and skeletonAry with the extra 2 rows and 2 cols
+    public distanceSkeleton(int nRows, int nCols, int iMin, int iMax, int choice) {
+        numRows = nRows;
+        numCols = nCols;
+        minVal = iMin;
+        maxVal = iMax;
+        newMinVal = iMin;
+        newMaxVal = iMax;
+        distanceChoice = choice;
+
+        ZFAry = new int[numRows + 2][numCols + 2];
+        skeletonAry = new int[numRows + 2][numCols + 2];
+    }
+
+    // setZero - set the entire 2D Ary (including the frame) to zero
+    public void setZero(int[][] Ary) {
+        for (int i = 0; i < numRows + 2; i++) {
+            for (int j = 0; j < numCols + 2; j++) {
+                Ary[i][j] = 0;
+            }
+        }
+    }
+
+    // loadImage - load the input image onto the inside of the frame of ZFAry
+    public void loadImage(Scanner inFile, int[][] ZFAry) {
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                ZFAry[i][j] = inFile.nextInt();
+            }
+        }
+    }
+
+    // loadSkeleton - read the header, then read each triplet (i, j, value) from skeletonFile into ZFAry
+    public void loadSkeleton(Scanner skeletonFile, int[][] ZFAry, PrintWriter logFile) {
+        logFile.println("*** Entering loadSkeleton () method.");
+
+        skeletonFile.nextInt(); // numRows
+        skeletonFile.nextInt(); // numCols
+        skeletonFile.nextInt(); // newMinVal
+        skeletonFile.nextInt(); // newMaxVal
+
+        while (skeletonFile.hasNextInt()) {
+            int i = skeletonFile.nextInt();
+            int j = skeletonFile.nextInt();
+            int value = skeletonFile.nextInt();
+            ZFAry[i][j] = value;
+        }
+        logFile.println("*** Leaving loadSkeleton () method.");
+    }
+
+    // distanceTransform - perform the 2-pass distance transform on ZFAry
+    public void distanceTransform(int[][] ZFAry, int distanceChoice, PrintWriter prettyPrintFile, PrintWriter logFile) {
+        logFile.println("***Entering DistanceTransform () method.");
+
+        distancePass1(ZFAry, distanceChoice, logFile);
+        prettyPrintFile.println("*** 1 st pass distance transform with choice =" + distanceChoice);
+        prettyPrint(ZFAry, prettyPrintFile);
+
+        distancePass2(ZFAry, distanceChoice, logFile);
+        prettyPrintFile.println("*** 2 nd pass distance transform with choice =" + distanceChoice);
+        prettyPrint(ZFAry, prettyPrintFile);
+
+        logFile.println("Leaving DistanceTransform () method.");
+    }
+
+    // distancePass1 - left to right, top to bottom, using the neighbors a, b, c, d; keep track of newMinVal and newMaxVal
+    public void distancePass1(int[][] ZFAry, int distanceChoice, PrintWriter logFile) {
+        logFile.println("*** Entering distancePass1 () method.");
+        newMinVal = 9999;
+        newMaxVal = 0;
+
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                if (ZFAry[i][j] > 0) {
+                    int a = ZFAry[i - 1][j - 1];
+                    int b = ZFAry[i - 1][j];
+                    int c = ZFAry[i - 1][j + 1];
+                    int d = ZFAry[i][j - 1];
+
+                    if (distanceChoice == 4) {
+                        ZFAry[i][j] = Math.min(Math.min(a + 2, b + 1), Math.min(c + 2, d + 1));
+                    } else {
+                        ZFAry[i][j] = Math.min(Math.min(a + 1, b + 1), Math.min(c + 1, d + 1));
+                    }
+                }
+                if (newMinVal > ZFAry[i][j]) {
+                    newMinVal = ZFAry[i][j];
+                }
+                if (newMaxVal < ZFAry[i][j]) {
+                    newMaxVal = ZFAry[i][j];
+                }
+            }
+        }
+        logFile.println("*** Leaving distancePass1 () method.");
+    }
+
+    // distancePass2 - right to left, bottom to top, using the neighbors e, f, g, h; keep track of newMinVal and newMaxVal
+    public void distancePass2(int[][] ZFAry, int distanceChoice, PrintWriter logFile) {
+        logFile.println("*** Entering distancePass2 () method.");
+        newMinVal = 9999;
+        newMaxVal = 0;
+
+        for (int i = numRows; i >= 1; i--) {
+            for (int j = numCols; j >= 1; j--) {
+                if (ZFAry[i][j] > 0) {
+                    int e = ZFAry[i][j + 1];
+                    int f = ZFAry[i + 1][j - 1];
+                    int g = ZFAry[i + 1][j];
+                    int h = ZFAry[i + 1][j + 1];
+                    int p = ZFAry[i][j];
+
+                    if (distanceChoice == 4) {
+                        ZFAry[i][j] = Math.min(Math.min(Math.min(e + 1, f + 2), Math.min(g + 1, h + 2)), p);
+                    } else {
+                        ZFAry[i][j] = Math.min(Math.min(Math.min(e + 1, f + 1), Math.min(g + 1, h + 1)), p);
+                    }
+                }
+                if (newMinVal > ZFAry[i][j]) {
+                    newMinVal = ZFAry[i][j];
+                }
+                if (newMaxVal < ZFAry[i][j]) {
+                    newMaxVal = ZFAry[i][j];
+                }
+            }
+        }
+        logFile.println("*** Leaving distancePass2 () method.");
+    }
+
+    // compression - find the local maxima of ZFAry, then write them to skeletonFile
+    public void compression(int[][] ZFAry, int distanceChoice, int[][] skeletonAry, PrintWriter skeletonFile, PrintWriter prettyPrintFile, PrintWriter logFile) {
+        logFile.println("*** Entering compression () method,");
+
+        computeLocalMaxima(ZFAry, skeletonAry, distanceChoice, logFile);
+        prettyPrintFile.println("*** Local maxima, skeletonAry with choice =" + distanceChoice);
+        prettyPrint(skeletonAry, prettyPrintFile);
+
+        extractSkeleton(skeletonAry, skeletonFile, logFile);
+
+        logFile.println("*** Leaving compression () method.");
+    }
+
+    // isLocalMaxima - true if ZFAry[i][j] > 0 and it is >= its 4 neighbors (b, d, e, g) for 4-distance, or all 8 neighbors for 8-distance
+    public boolean isLocalMaxima(int[][] ZFAry, int i, int j, int distanceChoice) {
+        int p = ZFAry[i][j];
+        if (p <= 0) {
+            return false;
+        }
+
+        int a = ZFAry[i - 1][j - 1];
+        int b = ZFAry[i - 1][j];
+        int c = ZFAry[i - 1][j + 1];
+        int d = ZFAry[i][j - 1];
+        int e = ZFAry[i][j + 1];
+        int f = ZFAry[i + 1][j - 1];
+        int g = ZFAry[i + 1][j];
+        int h = ZFAry[i + 1][j + 1];
+
+        if (distanceChoice == 4) {
+            return (p >= b && p >= d && p >= e && p >= g);
+        }
+        return (p >= a && p >= b && p >= c && p >= d && p >= e && p >= f && p >= g && p >= h);
+    }
+
+    // computeLocalMaxima - skeletonAry[i][j] is ZFAry[i][j] where it is a local maxima, otherwise 0
+    public void computeLocalMaxima(int[][] ZFAry, int[][] skeletonAry, int distanceChoice, PrintWriter logFile) {
+        logFile.println("*** Entering computeLocalMaxima () method.");
+
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                if (isLocalMaxima(ZFAry, i, j, distanceChoice)) {
+                    skeletonAry[i][j] = ZFAry[i][j];
+                } else {
+                    skeletonAry[i][j] = 0;
+                }
+            }
+        }
+        logFile.println("*** Leaving computeLocalMaxima () method.");
+    }
+
+    // extractSkeleton - write the header, then the triplet i, j, skeletonAry[i][j] for each skeleton pixel
+    public void extractSkeleton(int[][] skeletonAry, PrintWriter skeletonFile, PrintWriter logFile) {
+        logFile.println("*** Entering extractSkeleton () method.");
+
+        skeletonFile.println(numRows + " " + numCols + " " + newMinVal + " " + newMaxVal);
+
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                if (skeletonAry[i][j] > 0) {
+                    skeletonFile.println(i + " " + j + " " + skeletonAry[i][j]);
+                }
+            }
+        }
+        logFile.println("*** Leaving extractSkeleton () method.");
+    }
+
+    // deCompression - perform the 2-pass expansion on ZFAry
+    public void deCompression(int[][] ZFAry, int distanceChoice, PrintWriter prettyPrintFile, PrintWriter logFile) {
+        logFile.println("*** Entering deCompression () method.");
+
+        expensionPass1(ZFAry, distanceChoice, logFile);
+        prettyPrintFile.println("*** 1 st pass Expansion with choice =" + distanceChoice);
+        prettyPrint(ZFAry, prettyPrintFile);
+
+        expensionPass2(ZFAry, distanceChoice, logFile);
+        prettyPrintFile.println("*** 2 nd pass Expansion with choice =" + distanceChoice);
+        prettyPrint(ZFAry, prettyPrintFile);
+
+        logFile.println("*** Leaving deCompression () method.");
+    }
+
+    // expensionPass1 - left to right, top to bottom, only for the pixels equal to 0
+    public void expensionPass1(int[][] ZFAry, int distanceChoice, PrintWriter logFile) {
+        logFile.println("*** Entering expensionPass1 () method.");
+
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                if (ZFAry[i][j] == 0) {
+                    ZFAry[i][j] = expandedValue(ZFAry, i, j, distanceChoice);
+                }
+            }
+        }
+        logFile.println("*** Leaving expensionPass1 () method.");
+    }
+
+    // expensionPass2 - right to left, bottom to top, for all pixels
+    public void expensionPass2(int[][] ZFAry, int distanceChoice, PrintWriter logFile) {
+        logFile.println("*** Entering expensionPass2 () method.");
+
+        for (int i = numRows; i >= 1; i--) {
+            for (int j = numCols; j >= 1; j--) {
+                ZFAry[i][j] = expandedValue(ZFAry, i, j, distanceChoice);
+            }
+        }
+        logFile.println("*** Leaving expensionPass2 () method.");
+    }
+
+    // expandedValue - max of the 8 neighbors a..h (minus 2 for diagonals and minus 1 for sides in 4-distance; minus 1 for all in 8-distance) and P[i][j]
+    public int expandedValue(int[][] ZFAry, int i, int j, int distanceChoice) {
+        int a = ZFAry[i - 1][j - 1];
+        int b = ZFAry[i - 1][j];
+        int c = ZFAry[i - 1][j + 1];
+        int d = ZFAry[i][j - 1];
+        int e = ZFAry[i][j + 1];
+        int f = ZFAry[i + 1][j - 1];
+        int g = ZFAry[i + 1][j];
+        int h = ZFAry[i + 1][j + 1];
+        int p = ZFAry[i][j];
+
+        int result = p;
+        if (distanceChoice == 4) {
+            result = Math.max(result, Math.max(Math.max(a - 2, b - 1), Math.max(c - 2, d - 1)));
+            result = Math.max(result, Math.max(Math.max(e - 1, f - 2), Math.max(g - 1, h - 2)));
+        } else {
+            result = Math.max(result, Math.max(Math.max(a - 1, b - 1), Math.max(c - 1, d - 1)));
+            result = Math.max(result, Math.max(Math.max(e - 1, f - 1), Math.max(g - 1, h - 1)));
+        }
+        return result;
+    }
+
+    // binThreshold - write 1 and a blank space if ZFAry[i][j] >= 1, otherwise 0 and a blank space, to deCompressedFile
+    public void binThreshold(int[][] ZFAry, PrintWriter deCompressedFile) {
+        for (int i = 1; i <= numRows; i++) {
+            StringBuilder line = new StringBuilder();
+            for (int j = 1; j <= numCols; j++) {
+                if (ZFAry[i][j] >= 1) {
+                    line.append("1 ");
+                } else {
+                    line.append("0 ");
+                }
+            }
+            deCompressedFile.println(line.toString());
+        }
+    }
+
+    // prettyPrint - print the whole framed 2D array to prettyPrintFile, each value padded to the width of the largest value
+    public void prettyPrint(int[][] Ary, PrintWriter prettyPrintFile) {
+        int printMinVal = Ary[0][0];
+        int printMaxVal = Ary[0][0];
+        for (int i = 0; i < numRows + 2; i++) {
+            for (int j = 0; j < numCols + 2; j++) {
+                if (Ary[i][j] < printMinVal) {
+                    printMinVal = Ary[i][j];
+                }
+                if (Ary[i][j] > printMaxVal) {
+                    printMaxVal = Ary[i][j];
+                }
+            }
+        }
+        prettyPrintFile.println((numRows + 2) + " " + (numCols + 2) + " " + printMinVal + " " + printMaxVal);
+
+        int width = String.valueOf(printMaxVal).length();
+
+        for (int i = 0; i < numRows + 2; i++) {
+            StringBuilder line = new StringBuilder();
+            for (int j = 0; j < numCols + 2; j++) {
+                line.append(Ary[i][j]);
+
+                int ww = String.valueOf(Ary[i][j]).length();
+
+                do {
+                    line.append(" ");
+                    ww++;
+                } while (ww <= width);
+            }
+            prettyPrintFile.println(line.toString());
+        }
+    }
+}
+
+// main function
+public class KingA_Project5_main {
+    public static void main(String[] args) {
+        // Step 0: check if args length is correct and each file can be opened.
+        if (args.length != 6) {
+            System.err.println("Usage: java KingA_Project5_main <inFile> <distanceChoice> <prettyPrintFile> <skeletonFile> <deCompressedFile> <logFile>");
+            return;
+        }
+
+        Scanner inFile;
+        try {
+            inFile = new Scanner(new File(args[0]));
+        } catch (FileNotFoundException e) {
+            System.err.println("Error:  cannot open input file " + args[0]);
+            return;
+        }
+
+        int distanceChoice = Integer.parseInt(args[1]);
+        if (distanceChoice != 4 && distanceChoice != 8) {
+            System.err.println("Error:  distance choice must be 4 or 8, not " + args[1]);
+            return;
+        }
+
+        PrintWriter prettyPrintFile;
+        try {
+            prettyPrintFile = new PrintWriter(new FileWriter(args[2]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open pretty print file " + args[2]);
+            return;
+        }
+
+        PrintWriter skeletonFile;
+        try {
+            skeletonFile = new PrintWriter(new FileWriter(args[3]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open skeleton file " + args[3]);
+            return;
+        }
+
+        PrintWriter deCompressedFile;
+        try {
+            deCompressedFile = new PrintWriter(new FileWriter(args[4]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open decompressed file " + args[4]);
+            return;
+        }
+
+        PrintWriter logFile;
+        try {
+            logFile = new PrintWriter(new FileWriter(args[5]));
+        } catch (IOException e) {
+            System.err.println("Error:  cannot open log file " + args[5]);
+            return;
+        }
+
+        // numRows, numCols, minVal, maxVal <- read from inFile
+        int numRows = inFile.nextInt();
+        int numCols = inFile.nextInt();
+        int minVal = inFile.nextInt();
+        int maxVal = inFile.nextInt();
+
+        // dynamically allocate ZFAry and skeletonAry with extra 2 rows and 2 cols (done in the constructor)
+        // distanceChoice <- get from args [1]
+        distanceSkeleton skel = new distanceSkeleton(numRows, numCols, minVal, maxVal, distanceChoice);
+
+        // Step 1: setZero (ZFAry), setZero (skeletonAry)
+        skel.setZero(skel.ZFAry);
+        skel.setZero(skel.skeletonAry);
+
+        // Step 2: loadImage (inFile, ZFAry)
+        // prettyPrintFile <- "** Below is the input image**", then prettyPrint (ZFAry, prettyPrintFile)
+        skel.loadImage(inFile, skel.ZFAry);
+        prettyPrintFile.println("** Below is the input image**");
+        skel.prettyPrint(skel.ZFAry, prettyPrintFile);
+
+        // Step 3: distanceTransform (ZFAry, distanceChoice, prettyPrintFile, logFile)
+        skel.distanceTransform(skel.ZFAry, distanceChoice, prettyPrintFile, logFile);
+
+        // Step 4: compression (ZFAry, distanceChoice, skeletonAry, skeletonFile, prettyPrintFile, logFile)
+        skel.compression(skel.ZFAry, distanceChoice, skel.skeletonAry, skeletonFile, prettyPrintFile, logFile);
+
+        // Step 5: close skeletonFile
+        skeletonFile.close();
+
+        // Step 6: reopen skeletonFile
+        Scanner skeletonIn;
+        try {
+            skeletonIn = new Scanner(new File(args[3]));
+        } catch (FileNotFoundException e) {
+            System.err.println("Error:  cannot reopen skeleton file " + args[3]);
+            return;
+        }
+
+        // Step 7: setZero (ZFAry)
+        skel.setZero(skel.ZFAry);
+
+        // Step 8: loadSkeleton (skeletonFile, ZFAry, logFile)
+        // prettyPrintFile <- "** Below is the loaded skeleton with choice = ", then prettyPrint (ZFAry, prettyPrintFile)
+        skel.loadSkeleton(skeletonIn, skel.ZFAry, logFile);
+        prettyPrintFile.println("** Below is the loaded skeleton with choice = " + distanceChoice);
+        skel.prettyPrint(skel.ZFAry, prettyPrintFile);
+
+        // Step 9: deCompression (ZFAry, distanceChoice, prettyPrintFile, logFile)
+        skel.deCompression(skel.ZFAry, distanceChoice, prettyPrintFile, logFile);
+
+        // Step 10: deCompressedFile <- output numRows, numCols, minVal, maxVal
+        deCompressedFile.println(numRows + " " + numCols + " " + minVal + " " + maxVal);
+
+        // Step 11: binThreshold (ZFAry, deCompressedFile)
+        skel.binThreshold(skel.ZFAry, deCompressedFile);
+
+        // Step 12: close all files
+        inFile.close();
+        skeletonIn.close();
+        prettyPrintFile.close();
+        deCompressedFile.close();
+        logFile.close();
+    }
+}
