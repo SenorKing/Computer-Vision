@@ -1,4 +1,4 @@
-# project1-histogram
+# Histogram of a Binary Image
 
 A small C++ program that reads a grayscale image (plain numeric format), computes its histogram, displays a textual histogram graph, and produces both binary and non-binary thresholded versions of the image.
 
