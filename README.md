@@ -11,7 +11,7 @@ Image-processing algorithms built from scratch in C++ and Java for CS381 (Comput
 | 2 | [Bi-Gaussian Threshold](project2-bimeans) | C++ | Automatic threshold selection |
 | 3 | [Image Enhancement](project3-enhancement) | C++, Java | Average, median, Gaussian filters |
 | 4 | [Morphology](project4-morphology) | C++ | Dilation, erosion, opening, closing |
-| 5 | [Distance Transform Compression](project5-distance-transform) | Java | 4/8-distance, skeleton, decompression |
+| 5 | [Distance Transform Compression](project5-distance-transform.md) | Java | 4/8-distance, skeleton, decompression |
 
 ## Running a project
 
