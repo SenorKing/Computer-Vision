@@ -1,0 +1,381 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <cstdlib>
+using namespace std;
+
+// Thinning class
+class Thinning {
+public:
+    int numRows, numCols, minVal, maxVal;
+    int changeCount, cycleCount;
+
+    int **aryOne; // a 2D integer array, dynamically allocated of size numRows + 2 by numCols + 2; used for checking the three conditions for thinning
+    int **aryTwo; // a 2D integer array, dynamically allocated of size numRows + 2 by numCols + 2; stores the intermediate result after each side of thinning
+    int neighborAry[9]; // the 3 x 3 neighborhood of aryOne[i][j] in row-major order, neighborAry[4] is aryOne[i][j] itself
+
+    // constructor - store the header, set the counts to zero, then allocate aryOne and aryTwo (initialized to zero) with the extra 2 rows and 2 cols
+    Thinning(int nRows, int nCols, int iMin, int iMax) {
+        numRows = nRows;
+        numCols = nCols;
+        minVal = iMin;
+        maxVal = iMax;
+        changeCount = 0;
+        cycleCount = 0;
+
+        aryOne = new int *[numRows + 2];
+        aryTwo = new int *[numRows + 2];
+        for (int i = 0; i < numRows + 2; i++) {
+            aryOne[i] = new int[numCols + 2];
+            aryTwo[i] = new int[numCols + 2];
+            for (int j = 0; j < numCols + 2; j++) {
+                aryOne[i][j] = 0;
+                aryTwo[i][j] = 0;
+            }
+        }
+        for (int k = 0; k < 9; k++) {
+            neighborAry[k] = 0;
+        }
+    }
+
+    // destructor - free aryOne and aryTwo
+    ~Thinning() {
+        for (int i = 0; i < numRows + 2; i++) {
+            delete[] aryOne[i];
+            delete[] aryTwo[i];
+        }
+        delete[] aryOne;
+        delete[] aryTwo;
+    }
+
+    // loadImage - read from inFile and load onto the inside of the frame of aryOne, begins at (1, 1)
+    void loadImage(ifstream &inFile, int **aryOne) {
+        for (int i = 1; i <= numRows; i++) {
+            for (int j = 1; j <= numCols; j++) {
+                inFile >> aryOne[i][j];
+            }
+        }
+    }
+
+    // countNonZeroNeighbors - on your own; fill neighborAry with the 3 x 3 neighborhood of aryOne[i][j] and return the count of non-zero neighbors (excluding aryOne[i][j] itself)
+    int countNonZeroNeighbors(int *neighborAry, int **aryOne, int i, int j) {
+        int count = 0;
+        int k = 0;
+        for (int r = i - 1; r <= i + 1; r++) {
+            for (int c = j - 1; c <= j + 1; c++) {
+                neighborAry[k] = aryOne[r][c];
+                if (!(r == i && c == j) && aryOne[r][c] > 0) {
+                    count++;
+                }
+                k++;
+            }
+        }
+        return count;
+    }
+
+    // copyArys - always copy aryTwo to aryOne
+    void copyArys(int **aryTwo, int **aryOne) {
+        for (int i = 0; i < numRows + 2; i++) {
+            for (int j = 0; j < numCols + 2; j++) {
+                aryOne[i][j] = aryTwo[i][j];
+            }
+        }
+    }
+
+    // thinning - call the four thinning methods to thin one layer in each iteration
+    void thinning(int **aryOne, int **aryTwo, ofstream &logFile) {
+        logFile << "Entering thinning () before thinning 4 sides, aryOne is below:" << endl;
+        prettyPrint(aryOne, logFile);
+        changeCount = 0;
+
+        northThinning(aryOne, aryTwo, logFile);
+        logFile << "*** In thinning: after northThinning; below is aryTwo, changeCount = " << changeCount << "; cycleCount= " << cycleCount << endl;
+        prettyPrint(aryTwo, logFile);
+        copyArys(aryTwo, aryOne);
+
+        southThinning(aryOne, aryTwo, logFile);
+        logFile << "*** In thinning: after SouthThinning; below is aryTwo, changeCount = " << changeCount << "; cycleCount= " << cycleCount << endl;
+        prettyPrint(aryTwo, logFile);
+        copyArys(aryTwo, aryOne);
+
+        westThinning(aryOne, aryTwo, logFile);
+        logFile << "*** In thinning: after WestThinning; below is aryTwo, changeCount = " << changeCount << "; cycleCount= " << cycleCount << endl;
+        prettyPrint(aryTwo, logFile);
+        copyArys(aryTwo, aryOne);
+
+        eastThinning(aryOne, aryTwo, logFile);
+        logFile << "*** In thinning: after EastThinning; below is aryTwo, changeCount = " << changeCount << "; cycleCount= " << cycleCount << endl;
+        prettyPrint(aryTwo, logFile);
+        copyArys(aryTwo, aryOne);
+
+        logFile << "Leaving thinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+    }
+
+    // northThinning - thin the pixels whose north neighbor is 0, if they have at least 4 non-zero neighbors and are not a connector
+    void northThinning(int **aryOne, int **aryTwo, ofstream &logFile) {
+        logFile << "***Entering northThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+
+        int nonZeroCount = 0;
+        bool isConnector = false;
+
+        int i = 1;
+
+        while (i <= numRows + 1) {
+            int j = 1;
+
+            while (j <= numCols + 1) {
+                aryTwo[i][j] = aryOne[i][j];
+                nonZeroCount = 0;
+                isConnector = false;
+
+                if (aryOne[i][j] > 0 && aryOne[i - 1][j] == 0) {
+                    nonZeroCount = countNonZeroNeighbors(neighborAry, aryOne, i, j); // check condition 2
+                    isConnector = checkConnector(neighborAry); // check condition 3
+
+                    if (nonZeroCount >= 4 && isConnector == false) { // all 3 conditions are good
+                        aryTwo[i][j] = 0;
+                        changeCount++;
+                    }
+                }
+
+                logFile << "In northThinning: i=" << i << "; j=" << j << "; nonZeroCount=" << nonZeroCount
+                        << "; isConnector = " << (isConnector ? "true" : "false") << "; aryOne[i][j] =" << aryOne[i][j]
+                        << "; aryTwo[i][j] = " << aryTwo[i][j] << endl;
+
+                j++;
+            }
+            i++;
+        }
+        logFile << "*** Leaving northThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+    }
+
+    // southThinning - similar to northThinning, except the zero check is on the south side
+    void southThinning(int **aryOne, int **aryTwo, ofstream &logFile) {
+        logFile << "***Entering southThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+
+        int nonZeroCount = 0;
+        bool isConnector = false;
+
+        int i = 1;
+
+        while (i <= numRows + 1) {
+            int j = 1;
+
+            while (j <= numCols + 1) {
+                aryTwo[i][j] = aryOne[i][j];
+                nonZeroCount = 0;
+                isConnector = false;
+
+                if (aryOne[i][j] > 0 && aryOne[i + 1][j] == 0) {
+                    nonZeroCount = countNonZeroNeighbors(neighborAry, aryOne, i, j); // check condition 2
+                    isConnector = checkConnector(neighborAry); // check condition 3
+
+                    if (nonZeroCount >= 4 && isConnector == false) { // all 3 conditions are good
+                        aryTwo[i][j] = 0;
+                        changeCount++;
+                    }
+                }
+
+                logFile << "In southThinning: i=" << i << "; j=" << j << "; nonZeroCount=" << nonZeroCount
+                        << "; isConnector = " << (isConnector ? "true" : "false") << "; aryOne[i][j] =" << aryOne[i][j]
+                        << "; aryTwo[i][j] = " << aryTwo[i][j] << endl;
+
+                j++;
+            }
+            i++;
+        }
+
+        logFile << "*** Leaving southThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+    }
+
+    // westThinning - similar to northThinning, except the zero check is on the west side
+    void westThinning(int **aryOne, int **aryTwo, ofstream &logFile) {
+        logFile << "***Entering westThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+
+        int nonZeroCount = 0;
+        bool isConnector = false;
+
+        int i = 1;
+
+        while (i <= numRows + 1) {
+            int j = 1;
+
+            while (j <= numCols + 1) {
+                aryTwo[i][j] = aryOne[i][j];
+                nonZeroCount = 0;
+                isConnector = false;
+
+                if (aryOne[i][j] > 0 && aryOne[i][j - 1] == 0) {
+                    nonZeroCount = countNonZeroNeighbors(neighborAry, aryOne, i, j); // check condition 2
+                    isConnector = checkConnector(neighborAry); // check condition 3
+
+                    if (nonZeroCount >= 4 && isConnector == false) { // all 3 conditions are good
+                        aryTwo[i][j] = 0;
+                        changeCount++;
+                    }
+                }
+
+                logFile << "In westThinning: i=" << i << "; j=" << j << "; nonZeroCount=" << nonZeroCount
+                        << "; isConnector = " << (isConnector ? "true" : "false") << "; aryOne[i][j] =" << aryOne[i][j]
+                        << "; aryTwo[i][j] = " << aryTwo[i][j] << endl;
+
+                j++;
+            }
+            i++;
+        }
+        logFile << "*** Leaving westThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+    }
+
+    // eastThinning - similar to northThinning, except the zero check is on the east side
+    void eastThinning(int **aryOne, int **aryTwo, ofstream &logFile) {
+        logFile << "***Entering eastThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+
+        int nonZeroCount = 0;
+        bool isConnector = false;
+
+        int i = 1;
+
+        while (i <= numRows + 1) {
+            int j = 1;
+
+            while (j <= numCols + 1) {
+                aryTwo[i][j] = aryOne[i][j];
+                nonZeroCount = 0;
+                isConnector = false;
+
+                if (aryOne[i][j] > 0 && aryOne[i][j + 1] == 0) {
+                    nonZeroCount = countNonZeroNeighbors(neighborAry, aryOne, i, j); // check condition 2
+                    isConnector = checkConnector(neighborAry); // check condition 3
+
+                    if (nonZeroCount >= 4 && isConnector == false) { // all 3 conditions are good
+                        aryTwo[i][j] = 0;
+                        changeCount++;
+                    }
+                }
+
+                logFile << "In eastThinning: i=" << i << "; j=" << j << "; nonZeroCount=" << nonZeroCount
+                        << "; isConnector = " << (isConnector ? "true" : "false") << "; aryOne[i][j] =" << aryOne[i][j]
+                        << "; aryTwo[i][j] = " << aryTwo[i][j] << endl;
+                j++;
+            }
+            i++;
+        }
+        logFile << "*** Leaving eastThinning (); cycleCount = " << cycleCount << "; changeCount = " << changeCount << endl;
+    }
+
+    // checkConnector - checks the connector's six configurations (x means 1 or 0, so it is not checked); returns true if any one of the six is true, else false
+    bool checkConnector(int *n) {
+        // neighborAry layout:  n[0] n[1] n[2]
+        //                      n[3] n[4] n[5]
+        //                      n[6] n[7] n[8]
+        bool z1 = (n[1] == 0 && n[7] == 0); // x 0 x / x x x / x 0 x
+        bool z2 = (n[3] == 0 && n[5] == 0); // x x x / 0 x 0 / x x x
+        bool z3 = (n[0] > 0 && n[1] == 0 && n[3] == 0); // 1 0 x / 0 x x / x x x
+        bool z4 = (n[2] > 0 && n[1] == 0 && n[5] == 0); // x 0 1 / x x 0 / x x x
+        bool z5 = (n[6] > 0 && n[3] == 0 && n[7] == 0); // x x x / 0 x x / 1 0 x
+        bool z6 = (n[8] > 0 && n[5] == 0 && n[7] == 0); // x x x / x x 0 / x 0 1
+
+        return z1 || z2 || z3 || z4 || z5 || z6;
+    }
+
+    // prettyPrint - print the image header, then the whole framed 2D array with 0 replaced by a dot, each value padded to the width of the largest value
+    void prettyPrint(int **Ary, ofstream &outFile) {
+        int printMinVal = Ary[0][0];
+        int printMaxVal = Ary[0][0];
+        for (int i = 0; i < numRows + 2; i++) {
+            for (int j = 0; j < numCols + 2; j++) {
+                if (Ary[i][j] < printMinVal) {
+                    printMinVal = Ary[i][j];
+                }
+                if (Ary[i][j] > printMaxVal) {
+                    printMaxVal = Ary[i][j];
+                }
+            }
+        }
+        outFile << (numRows + 2) << " " << (numCols + 2) << " " << printMinVal << " " << printMaxVal << endl;
+
+        int width = to_string(printMaxVal).length();
+
+        for (int i = 0; i < numRows + 2; i++) {
+            for (int j = 0; j < numCols + 2; j++) {
+                string token;
+                if (Ary[i][j] > 0) {
+                    token = to_string(Ary[i][j]);
+                } else {
+                    token = ".";
+                }
+                outFile << token;
+
+                int ww = token.length();
+
+                while (ww <= width) {
+                    outFile << " ";
+                    ww++;
+                }
+            }
+            outFile << endl;
+        }
+    }
+};
+
+// main function
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        cerr << "Usage: " << argv[0] << " <inFile> <outFile1> <logFile>" << endl;
+        return 1;
+    }
+
+    ifstream inFile(argv[1]);
+    if (!inFile.is_open()) {
+        cerr << "Error:  cannot open input file " << argv[1] << endl;
+        return 1;
+    }
+
+    ofstream outFile1(argv[2]);
+    if (!outFile1.is_open()) {
+        cerr << "Error:  cannot open output file " << argv[2] << endl;
+        return 1;
+    }
+
+    ofstream logFile(argv[3]);
+    if (!logFile.is_open()) {
+        cerr << "Error:  cannot open log file " << argv[3] << endl;
+        return 1;
+    }
+
+    // read the image header from inFile and write it to outFile1
+    int numRows, numCols, minVal, maxVal;
+    inFile >> numRows >> numCols >> minVal >> maxVal;
+
+    outFile1 << "input image header" << endl;
+    outFile1 << numRows << " " << numCols << " " << minVal << " " << maxVal << endl;
+
+    // dynamically allocate all arrays and initialize via constructor; changeCount and cycleCount start at 0
+    Thinning thin(numRows, numCols, minVal, maxVal);
+    thin.changeCount = 0;
+    thin.cycleCount = 0;
+
+    thin.loadImage(inFile, thin.aryOne);
+
+    thin.changeCount = 1; 
+
+    outFile1 << "***In main(), before thinning, changeCount = " << thin.changeCount << "; cycleCount = " << thin.cycleCount << endl;
+    thin.prettyPrint(thin.aryOne, outFile1);
+
+    //repeat step 3 to step 5 until changeCount <= 0
+    while (thin.changeCount > 0) {
+        thin.thinning(thin.aryOne, thin.aryTwo, logFile);
+        thin.cycleCount++;
+        outFile1 << "***In main (), inside iteration; changeCount = " << thin.changeCount << "; cycleCount = " << thin.cycleCount << endl;
+        thin.prettyPrint(thin.aryOne, outFile1);
+    } 
+
+    outFile1 << "***in main (), the final skeleton, changeCount = " << thin.changeCount << "; cycleCount = " << thin.cycleCount << endl;
+    thin.prettyPrint(thin.aryOne, outFile1);
+
+    inFile.close();
+    outFile1.close();
+    logFile.close();
+
+    return 0;
+}
